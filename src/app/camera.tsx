@@ -2,7 +2,14 @@ import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo
 import { router } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Pressable, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Animated,
+  Linking,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -24,8 +31,11 @@ export default function CameraScreen() {
   const cameraRef = useRef<CameraView>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [facing, setFacing] = useState<'front' | 'back'>('back');
+  const [cameraReady, setCameraReady] = useState(false);
   const [pendingUri, setPendingUri] = useState<string | null>(null);
   const pendingUriRef = useRef<string | null>(null);
+  // 「その日」は録画が完了した瞬間に確定する（0時またぎで翌日扱いになるのを防ぐ）
+  const recordedDateRef = useRef<string | null>(null);
   const confirmedRef = useRef(false);
   const [progress] = useState(() => new Animated.Value(0));
   const [progressWidth] = useState(() =>
@@ -48,7 +58,10 @@ export default function CameraScreen() {
 
   useEffect(() => {
     if (pendingUri) {
-      previewPlayer.replaceAsync(pendingUri).then(() => previewPlayer.play());
+      previewPlayer
+        .replaceAsync(pendingUri)
+        .then(() => previewPlayer.play())
+        .catch(() => {});
     }
   }, [pendingUri, previewPlayer]);
 
@@ -57,6 +70,11 @@ export default function CameraScreen() {
   }
 
   if (!cameraPermission.granted || !micPermission.granted) {
+    // 「今後表示しない」で拒否済みの場合は OS 設定へ誘導するしかない
+    const mustOpenSettings =
+      (!cameraPermission.granted && !cameraPermission.canAskAgain) ||
+      (!micPermission.granted && !micPermission.canAskAgain);
+
     return (
       <ThemedView style={styles.center}>
         <ThemedText type="subtitle" style={styles.permissionText}>
@@ -64,14 +82,21 @@ export default function CameraScreen() {
         </ThemedText>
         <Pressable
           style={[styles.primaryButton, { backgroundColor: palette.accent }]}
+          accessibilityRole="button"
           onPress={async () => {
+            if (mustOpenSettings) {
+              await Linking.openSettings();
+              return;
+            }
             if (!cameraPermission.granted) await requestCameraPermission();
             if (!micPermission.granted) await requestMicPermission();
           }}
         >
-          <ThemedText style={styles.primaryButtonText}>許可する</ThemedText>
+          <ThemedText style={styles.primaryButtonText}>
+            {mustOpenSettings ? '設定を開く' : '許可する'}
+          </ThemedText>
         </Pressable>
-        <Pressable onPress={() => router.back()}>
+        <Pressable onPress={() => router.back()} accessibilityRole="button">
           <ThemedText style={{ color: palette.textSecondary }}>あとで</ThemedText>
         </Pressable>
       </ThemedView>
@@ -80,7 +105,7 @@ export default function CameraScreen() {
 
   const record = async () => {
     const camera = cameraRef.current;
-    if (!camera || phase !== 'idle') return;
+    if (!camera || phase !== 'idle' || !cameraReady) return;
 
     setPhase('recording');
     progress.setValue(0);
@@ -94,8 +119,11 @@ export default function CameraScreen() {
       // maxDuration で1秒（1000ms）録画し自動停止を待つ
       const result = await camera.recordAsync({ maxDuration: 1 });
       if (result?.uri) {
-        pendingUriRef.current = result.uri;
-        setPendingUri(result.uri);
+        recordedDateRef.current = todayString();
+        // 録画ファイルをアプリ管理下の pending 領域へ移す（起動時掃除の対象にする）
+        const staged = await storage.stagePending(result.uri);
+        pendingUriRef.current = staged;
+        setPendingUri(staged);
         setPhase('preview');
       } else {
         setPhase('idle');
@@ -105,7 +133,9 @@ export default function CameraScreen() {
     }
   };
 
-  const retake = () => {
+  const retake = async () => {
+    // 再生中のファイルを消さないよう、プレイヤーから切り離してから削除する
+    await previewPlayer.replaceAsync(null).catch(() => {});
     if (pendingUriRef.current) {
       storage.discardPending(pendingUriRef.current);
       pendingUriRef.current = null;
@@ -118,7 +148,10 @@ export default function CameraScreen() {
     if (!pendingUriRef.current || phase === 'saving') return;
     setPhase('saving');
     try {
-      await storage.finalize(todayString(), pendingUriRef.current);
+      await storage.finalize(
+        recordedDateRef.current ?? todayString(),
+        pendingUriRef.current,
+      );
       confirmedRef.current = true;
       pendingUriRef.current = null;
       await refreshToday();
@@ -148,6 +181,7 @@ export default function CameraScreen() {
                 style={[styles.secondaryButton, { borderColor: '#fff' }]}
                 onPress={retake}
                 disabled={phase === 'saving'}
+                accessibilityRole="button"
               >
                 <ThemedText style={styles.overlayButtonText}>撮り直す</ThemedText>
               </Pressable>
@@ -155,6 +189,7 @@ export default function CameraScreen() {
                 style={[styles.primaryButton, { backgroundColor: palette.accent }]}
                 onPress={confirm}
                 disabled={phase === 'saving'}
+                accessibilityRole="button"
               >
                 {phase === 'saving' ? (
                   <ActivityIndicator color="#fff" />
@@ -174,16 +209,27 @@ export default function CameraScreen() {
             facing={facing}
             videoQuality="720p"
             mirror={facing === 'front'}
+            onCameraReady={() => setCameraReady(true)}
           />
           <SafeAreaView style={styles.overlay}>
             <View style={styles.topBar}>
-              <Pressable onPress={() => router.back()} hitSlop={12}>
+              <Pressable
+                onPress={() => router.back()}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="閉じる"
+              >
                 <ThemedText style={styles.overlayButtonText}>✕</ThemedText>
               </Pressable>
               <Pressable
-                onPress={() => setFacing((f) => (f === 'back' ? 'front' : 'back'))}
+                onPress={() => {
+                  setCameraReady(false); // カメラ切替中の録画開始を防ぐ
+                  setFacing((f) => (f === 'back' ? 'front' : 'back'));
+                }}
                 hitSlop={12}
                 disabled={phase === 'recording'}
+                accessibilityRole="button"
+                accessibilityLabel="カメラを切り替える"
               >
                 <ThemedText style={styles.overlayButtonText}>🔄</ThemedText>
               </Pressable>
@@ -201,16 +247,18 @@ export default function CameraScreen() {
                 </View>
               ) : (
                 <ThemedText style={styles.overlayButtonText}>
-                  ボタンを押すと1秒だけ録画します
+                  {cameraReady ? 'ボタンを押すと1秒だけ録画します' : 'カメラを準備中…'}
                 </ThemedText>
               )}
               <Pressable
                 onPress={record}
-                disabled={phase !== 'idle'}
+                disabled={phase !== 'idle' || !cameraReady}
+                accessibilityRole="button"
+                accessibilityLabel="1秒録画を開始する"
                 style={[
                   styles.shutter,
                   { borderColor: '#fff' },
-                  phase === 'recording' && { opacity: 0.5 },
+                  (phase === 'recording' || !cameraReady) && { opacity: 0.5 },
                 ]}
               >
                 <View style={[styles.shutterInner, { backgroundColor: palette.accent }]} />

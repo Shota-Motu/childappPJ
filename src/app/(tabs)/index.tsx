@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,7 +18,8 @@ function formatToday(): string {
 
 export default function TodayScreen() {
   const palette = useTheme();
-  const { todayEntry, streak, refreshToday } = useEntriesStore();
+  const { todayEntry, streak, totalDays, refreshToday } = useEntriesStore();
+  const [muted, setMuted] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
@@ -27,41 +28,69 @@ export default function TodayScreen() {
   );
 
   const videoUri = todayEntry ? storage.resolveUri(todayEntry.video_path) : null;
-  const player = useVideoPlayer(videoUri, (p) => {
+
+  // useVideoPlayer はソース引数を初期値としてしか読まないため、
+  // URI の変化（初回ロード・撮り直し）は replaceAsync で明示的に反映する
+  const player = useVideoPlayer(null, (p) => {
     p.loop = true;
     p.muted = true;
   });
 
   useEffect(() => {
-    if (videoUri) player.play();
+    if (videoUri) {
+      player
+        .replaceAsync(videoUri)
+        .then(() => player.play())
+        .catch(() => {});
+    }
   }, [videoUri, player]);
+
+  // expo-video の player はプロパティ代入で操作する外部システム
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability
+    player.muted = muted;
+  }, [muted, player]);
+
+  const toggleMute = () => setMuted((m) => !m);
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <ThemedText type="title">{formatToday()}</ThemedText>
-          {streak > 0 && (
-            <ThemedText style={{ color: palette.accent }}>
-              🔥 {streak}日連続で記録中
-            </ThemedText>
-          )}
+          <View style={styles.stats}>
+            {totalDays > 0 && (
+              <ThemedText style={{ color: palette.textSecondary }}>
+                合計 {totalDays}日分の思い出
+              </ThemedText>
+            )}
+            {streak > 1 && (
+              <ThemedText style={{ color: palette.accent }}>🔥 {streak}日連続</ThemedText>
+            )}
+          </View>
         </View>
 
         {todayEntry && videoUri ? (
           <View style={styles.recordedArea}>
-            <View style={[styles.videoFrame, { borderColor: palette.accentSoft }]}>
+            <Pressable
+              onPress={toggleMute}
+              style={[styles.videoFrame, { borderColor: palette.accentSoft }]}
+              accessibilityRole="button"
+              accessibilityLabel={muted ? '音声をオンにする' : '音声をオフにする'}
+            >
               <VideoView
                 player={player}
                 style={styles.video}
                 contentFit="cover"
                 nativeControls={false}
               />
-            </View>
+              <ThemedText style={styles.muteBadge}>{muted ? '🔇' : '🔊'}</ThemedText>
+            </Pressable>
             <ThemedText type="subtitle">今日の1秒、残せました 🎉</ThemedText>
             <Pressable
-              onPress={() => router.push('/camera')}
+              onPress={() => router.navigate('/camera')}
               style={[styles.secondaryButton, { borderColor: palette.accent }]}
+              accessibilityRole="button"
             >
               <ThemedText style={{ color: palette.accent }}>撮り直す</ThemedText>
             </Pressable>
@@ -72,8 +101,10 @@ export default function TodayScreen() {
               今日の1秒を{'\n'}まだ撮っていません
             </ThemedText>
             <Pressable
-              onPress={() => router.push('/camera')}
+              onPress={() => router.navigate('/camera')}
               style={[styles.recordButton, { backgroundColor: palette.accent }]}
+              accessibilityRole="button"
+              accessibilityLabel="今日の1秒を撮影する"
             >
               <View style={[styles.recordButtonInner, { borderColor: palette.background }]}>
                 <ThemedText style={styles.recordButtonEmoji}>📷</ThemedText>
@@ -93,6 +124,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1, alignItems: 'center', padding: Spacing.four },
   header: { alignItems: 'center', gap: Spacing.two, marginTop: Spacing.four },
+  stats: { alignItems: 'center', gap: Spacing.half },
   emptyArea: {
     flex: 1,
     alignItems: 'center',
@@ -131,6 +163,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   video: { width: '100%', height: '100%' },
+  muteBadge: {
+    position: 'absolute',
+    right: Spacing.three,
+    bottom: Spacing.three,
+    fontSize: 22,
+  },
   secondaryButton: {
     borderWidth: 1.5,
     borderRadius: 999,
