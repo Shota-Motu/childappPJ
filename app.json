@@ -55,7 +55,8 @@
         {
           "photosPermission": "撮り逃した日の動画をフォトライブラリから取り込むために使用します。"
         }
-      ]
+      ],
+      "./plugins/withoutPushEntitlement"
     ],
     "experiments": {
       "typedRoutes": true,
