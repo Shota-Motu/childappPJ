@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "1秒アルバム",
+    "name": "OneSecondAlbum",
     "slug": "child-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,6 +10,7 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "infoPlist": {
+        "CFBundleDisplayName": "1秒アルバム",
         "CFBundleAllowMixedLocalizations": true
       }
     },
