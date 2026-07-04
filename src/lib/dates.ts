@@ -9,3 +9,9 @@ export function toDateString(d: Date = new Date()): string {
 export function todayString(): string {
   return toDateString(new Date());
 }
+
+/** 'YYYY-MM-DD' → '2026年7月5日' */
+export function formatDateJa(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return `${y}年${m}月${d}日`;
+}

@@ -140,6 +140,78 @@ export async function countEntries(childId: number = DEFAULT_CHILD_ID): Promise<
   return row?.n ?? 0;
 }
 
+export async function getAllEntries(childId: number = DEFAULT_CHILD_ID): Promise<Entry[]> {
+  const db = await getDb();
+  return db.getAllAsync<Entry>(
+    'SELECT * FROM entries WHERE child_id = ? ORDER BY date ASC',
+    childId,
+  );
+}
+
+/** 指定日の前後で記録がある日付（Playback 画面の ‹ › ナビゲーション用） */
+export async function getAdjacentDates(
+  date: string,
+  childId: number = DEFAULT_CHILD_ID,
+): Promise<{ prev: string | null; next: string | null }> {
+  const db = await getDb();
+  const [prev, next] = await Promise.all([
+    db.getFirstAsync<{ date: string }>(
+      'SELECT date FROM entries WHERE child_id = ? AND date < ? ORDER BY date DESC LIMIT 1',
+      childId,
+      date,
+    ),
+    db.getFirstAsync<{ date: string }>(
+      'SELECT date FROM entries WHERE child_id = ? AND date > ? ORDER BY date ASC LIMIT 1',
+      childId,
+      date,
+    ),
+  ]);
+  return { prev: prev?.date ?? null, next: next?.date ?? null };
+}
+
+/**
+ * バックアップ復元用：タイムスタンプを保持したまま行を丸ごと書き戻す。
+ * 「新しい方が勝つ」判定は呼び出し側（BackupService）が行う
+ */
+export async function restoreEntry(entry: Entry): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO entries
+       (child_id, date, video_path, thumb_path, duration_ms, clip_start_ms, source, content_hash, sync_status, remote_url, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    entry.child_id,
+    entry.date,
+    entry.video_path,
+    entry.thumb_path,
+    entry.duration_ms,
+    entry.clip_start_ms,
+    entry.source,
+    entry.content_hash,
+    entry.sync_status,
+    entry.remote_url,
+    entry.created_at,
+    entry.updated_at,
+  );
+}
+
+export async function getSetting(key: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ value: string | null }>(
+    'SELECT value FROM settings WHERE key = ?',
+    key,
+  );
+  return row?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    key,
+    value,
+  );
+}
+
 /** 今日（または昨日）から遡った連続記録日数 */
 export async function getStreak(
   today: string,

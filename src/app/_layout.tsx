@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { useTheme } from '@/hooks/use-theme';
+import { ensureAndroidChannel, rescheduleReminders } from '@/services/NotificationService';
 import { storage } from '@/services/StorageService';
 
 export default function RootLayout() {
@@ -12,6 +13,8 @@ export default function RootLayout() {
   useEffect(() => {
     // 前回セッションで確定されなかった一時録画ファイルを掃除
     storage.cleanPending();
+    // リマインドは「今後7日分」方式なので、起動のたびに窓を転がす
+    ensureAndroidChannel().then(() => rescheduleReminders());
   }, []);
 
   const navTheme = colorScheme === 'dark' ? DarkTheme : DefaultTheme;
@@ -34,6 +37,7 @@ export default function RootLayout() {
           name="camera"
           options={{ presentation: 'fullScreenModal', headerShown: false }}
         />
+        <Stack.Screen name="playback/[date]" options={{ headerBackTitle: '戻る' }} />
       </Stack>
     </ThemeProvider>
   );

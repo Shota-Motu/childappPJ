@@ -1,5 +1,4 @@
 import { router, useFocusEffect } from 'expo-router';
-import * as Sharing from 'expo-sharing';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -10,6 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useClipLoop } from '@/hooks/use-clip-loop';
 import { useTheme } from '@/hooks/use-theme';
+import { shareEntryVideo } from '@/lib/share';
 import { storage } from '@/services/StorageService';
 import { useEntriesStore } from '@/stores/useEntriesStore';
 
@@ -58,13 +58,8 @@ export default function TodayScreen() {
 
   const toggleMute = () => setMuted((m) => !m);
 
-  const share = async () => {
-    if (!videoUri || !todayEntry) return;
-    if (!(await Sharing.isAvailableAsync())) return;
-    await Sharing.shareAsync(videoUri, {
-      dialogTitle: '今日の1秒を共有',
-      mimeType: todayEntry.video_path.endsWith('.mov') ? 'video/quicktime' : 'video/mp4',
-    }).catch(() => {}); // ユーザーキャンセルは正常系
+  const share = () => {
+    if (todayEntry) shareEntryVideo(todayEntry);
   };
 
   return (

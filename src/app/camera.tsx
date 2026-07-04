@@ -19,6 +19,7 @@ import { Spacing } from '@/constants/theme';
 import { useClipLoop } from '@/hooks/use-clip-loop';
 import { useTheme } from '@/hooks/use-theme';
 import { todayString } from '@/lib/dates';
+import { rescheduleReminders } from '@/services/NotificationService';
 import { storage } from '@/services/StorageService';
 import { useEntriesStore } from '@/stores/useEntriesStore';
 
@@ -177,6 +178,7 @@ export default function CameraScreen() {
       confirmedRef.current = true;
       pendingUriRef.current = null;
       await refreshToday();
+      rescheduleReminders(); // 今日撮ったので当日のリマインドを外す
       router.back();
     } catch (e) {
       console.error('保存に失敗しました', e);
