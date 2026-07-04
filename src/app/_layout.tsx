@@ -1,18 +1,40 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import { useTheme } from '@/hooks/use-theme';
+import { storage } from '@/services/StorageService';
 
-SplashScreen.preventAutoHideAsync();
-
-export default function TabLayout() {
+export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const palette = useTheme();
+
+  useEffect(() => {
+    // 前回セッションで確定されなかった一時録画ファイルを掃除
+    storage.cleanPending();
+  }, []);
+
+  const navTheme = colorScheme === 'dark' ? DarkTheme : DefaultTheme;
+  const theme = {
+    ...navTheme,
+    colors: {
+      ...navTheme.colors,
+      background: palette.background,
+      card: palette.background,
+      text: palette.text,
+      primary: palette.accent,
+    },
+  };
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
+    <ThemeProvider value={theme}>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="camera"
+          options={{ presentation: 'fullScreenModal', headerShown: false }}
+        />
+      </Stack>
     </ThemeProvider>
   );
 }
