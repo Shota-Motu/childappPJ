@@ -8,11 +8,19 @@ import { type Entry, getEntry, upsertEntry } from './db';
  * フェーズ3でクラウドバックアップを載せる際は、このインターフェースの
  * 実装を差し替える（画面側は StorageService 経由でしか触らない）。
  */
+export interface FinalizeOptions {
+  source?: Entry['source'];
+  /** 「ベスト1秒」の開始位置（ms）。サムネイルもこの位置から生成する */
+  clipStartMs?: number;
+  /** 動画ファイル全体の長さ（ms） */
+  durationMs?: number;
+}
+
 export interface StorageService {
   /** 録画直後の一時ファイルをアプリ管理下の pending 領域へ移す */
   stagePending(recordedUri: string): Promise<string>;
   /** 一時ファイルを正規の保存先へ確定し、サムネイル生成と DB 登録まで行う */
-  finalize(date: string, pendingUri: string, source?: Entry['source']): Promise<void>;
+  finalize(date: string, pendingUri: string, options?: FinalizeOptions): Promise<void>;
   /** 未確定の一時ファイルを破棄する */
   discardPending(pendingUri: string): void;
   /** pending ディレクトリの残骸を掃除する（アプリ起動時に呼ぶ） */
@@ -74,8 +82,9 @@ class LocalStorageService implements StorageService {
   async finalize(
     date: string,
     pendingUri: string,
-    source: Entry['source'] = 'camera',
+    options: FinalizeOptions = {},
   ): Promise<void> {
+    const { source = 'camera', clipStartMs = 0, durationMs = 1000 } = options;
     ensureDir(videosDir());
     ensureDir(thumbsDir());
 
@@ -94,7 +103,7 @@ class LocalStorageService implements StorageService {
     try {
       const VideoThumbnails = await import('expo-video-thumbnails');
       const { uri: tmpThumbUri } = await VideoThumbnails.getThumbnailAsync(video.uri, {
-        time: 0,
+        time: clipStartMs,
       });
       const thumb = new File(thumbsDir(), `${date}_${version}.jpg`);
       await new File(tmpThumbUri).move(thumb);
@@ -107,7 +116,8 @@ class LocalStorageService implements StorageService {
       date,
       video_path: `videos/${videoName}`,
       thumb_path: thumbPath,
-      duration_ms: 1000,
+      duration_ms: durationMs,
+      clip_start_ms: clipStartMs,
       source,
       content_hash: await computeHash(video),
     });

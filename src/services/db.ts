@@ -13,7 +13,8 @@ export interface Entry {
   date: string; // 'YYYY-MM-DD'（child_id との複合主キー = 1日1本の制約）
   video_path: string; // documentDirectory からの相対パス
   thumb_path: string; // サムネイル生成に失敗した場合は ''（表示側でプレースホルダー）
-  duration_ms: number;
+  duration_ms: number; // 動画ファイル全体の長さ（約3000ms。再生窓は1秒）
+  clip_start_ms: number; // 「ベスト1秒」の開始位置。再生・書き出しはここから1秒
   source: EntrySource;
   content_hash: string | null;
   sync_status: SyncStatus;
@@ -45,6 +46,8 @@ const MIGRATIONS: string[] = [
     value TEXT
   );
   `,
+  // v2: 3秒録画からベスト1秒を選ぶ方式（再生ウィンドウ）
+  `ALTER TABLE entries ADD COLUMN clip_start_ms INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 let dbPromise: Promise<SQLiteDatabase> | null = null;
@@ -79,21 +82,23 @@ export async function upsertEntry(
   const now = new Date().toISOString();
   // 同日上書き（撮り直し）は updated_at ベースで「新しい方が勝つ」仕様
   await db.runAsync(
-    `INSERT INTO entries (child_id, date, video_path, thumb_path, duration_ms, source, content_hash, sync_status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'local', ?, ?)
+    `INSERT INTO entries (child_id, date, video_path, thumb_path, duration_ms, clip_start_ms, source, content_hash, sync_status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'local', ?, ?)
      ON CONFLICT(child_id, date) DO UPDATE SET
-       video_path   = excluded.video_path,
-       thumb_path   = excluded.thumb_path,
-       duration_ms  = excluded.duration_ms,
-       source       = excluded.source,
-       content_hash = excluded.content_hash,
-       sync_status  = 'local',
-       updated_at   = excluded.updated_at`,
+       video_path    = excluded.video_path,
+       thumb_path    = excluded.thumb_path,
+       duration_ms   = excluded.duration_ms,
+       clip_start_ms = excluded.clip_start_ms,
+       source        = excluded.source,
+       content_hash  = excluded.content_hash,
+       sync_status   = 'local',
+       updated_at    = excluded.updated_at`,
     entry.child_id ?? DEFAULT_CHILD_ID,
     entry.date,
     entry.video_path,
     entry.thumb_path,
     entry.duration_ms,
+    entry.clip_start_ms,
     entry.source,
     entry.content_hash,
     now,

@@ -125,26 +125,31 @@
 
 ```
 [録画開始]
-   │ expo-camera で 1000ms 録画（maxDuration: 1 で自動停止）
+   │ expo-camera で 3000ms 録画（maxDuration: 3 で自動停止）
    │ ※録画日はこの完了時点で確定（0時またぎで翌日扱いになるのを防ぐ）
    ▼
 [ステージング]  cache/pending/{timestamp}{ext} へ移動
    │ ※拡張子は維持する（iOS は .mov、Android は .mp4）
    │
-   ├─ プレビュー表示（ループ再生）
+   ├─ プレビュー表示（選択中の1秒だけをループ再生）
+   │    ├─ スライダーで「ベスト1秒」の開始位置（clip_start_ms）を選ぶ。デフォルトは先頭
    │    ├─「この1秒を残す」→ 確定へ
    │    └─「撮り直す」→ プレイヤーから切り離してから一時ファイル削除 → 録画へ戻る
    ▼
 [確定]
-   1. documentDirectory/videos/{YYYY-MM-DD}_{version}{ext} へ移動
-   2. expo-video-thumbnails でサムネイル生成
+   1. documentDirectory/videos/{YYYY-MM-DD}_{version}{ext} へ移動（3秒のまま。トリミングしない）
+   2. expo-video-thumbnails で clip_start_ms 位置からサムネイル生成
       → documentDirectory/thumbs/{YYYY-MM-DD}_{version}.jpg
       ※生成失敗は非致命（thumb_path='' で記録は成立させ、表示側でプレースホルダー）
-   3. SQLite にレコード upsert
+   3. SQLite にレコード upsert（clip_start_ms / duration_ms を含む）
    4. upsert 成功後に旧バージョンのファイルを削除
    ▼
 [画面離脱時]  未確定ファイルを削除。起動時にも pending/ を一括掃除
 ```
+
+**再生ウィンドウ方式**：動画は3秒のまま保存し、再生側が `clip_start_ms` から1秒だけを
+ループ再生する（`useClipLoop` フック）。ffmpeg なしで「ベスト1秒選択」を実現し、
+物理的な切り出しはフェーズ3の年間ムービー書き出し時に ffmpeg の trim で行う。
 
 - **ファイル名はバージョン付き**（`{date}_{timestamp}`）：撮り直し時に必ず新しい URI になるため、
   プレイヤー・Image の URI キャッシュ問題と「再生中ファイルへの上書き」を構造的に回避できる。
@@ -163,7 +168,8 @@ CREATE TABLE entries (
   date         TEXT NOT NULL,       -- 'YYYY-MM-DD'
   video_path   TEXT NOT NULL,       -- 相対パス（videos/{date}_{version}{ext}）
   thumb_path   TEXT NOT NULL DEFAULT '',  -- 生成失敗時は ''
-  duration_ms  INTEGER NOT NULL DEFAULT 1000,
+  duration_ms  INTEGER NOT NULL DEFAULT 1000,  -- 動画ファイル全体の長さ（約3000ms）
+  clip_start_ms INTEGER NOT NULL DEFAULT 0,    -- 「ベスト1秒」の開始位置（v2で追加）
   source       TEXT NOT NULL DEFAULT 'camera',  -- 'camera' | 'import'
   content_hash TEXT,                    -- 同期の差分検出・重複排除用（撮影確定時に記録）
   sync_status  TEXT NOT NULL DEFAULT 'local',  -- 'local' | 'pending' | 'synced'
@@ -244,7 +250,7 @@ child-app/
 | フェーズ | 内容 |
 |---|---|
 | **1（MVP）** | 録画→確定フロー / Today / Calendar / Album / 単日再生 / 通知 / ダークモード / 日英対応 |
-| **2** | **zip エクスポート（データ保全を最優先）** / **今日の1秒を共有シートで送る（LINE 等）** / YearReview 連続再生 / フォトライブラリ取り込み（撮り逃し救済）/ 子供プロフィール・月齢表示 |
+| **2** | **zip エクスポート（データ保全を最優先）** / YearReview 連続再生 / フォトライブラリ取り込み（撮り逃し救済）/ 子供プロフィール・月齢表示 ※共有シート・ベスト1秒選択は前倒しで実装済み |
 | **3** | 1年ムービー書き出し（ffmpeg）/ 複数の子供対応 / クラウドバックアップ + サブスク課金（RevenueCat、判断次第）/ 家族間共有（同上）/ ホーム画面ウィジェット |
 
 ---
@@ -265,7 +271,7 @@ child-app/
 
 実装前にプロダクトオーナーの判断が必要なもの。優先度順。
 
-### A.「間を外さない」撮影 — 3秒録画してベスト1秒を選ぶ（最重要・フェーズ2候補）
+### A.「間を外さない」撮影 — 3秒録画してベスト1秒を選ぶ ✅ 実装済み（2026-07）
 
 **課題**：子供は狙った瞬間に笑わない。「ボタンを押してから1秒」方式は、シャッターチャンスの
 0.5秒前に気づいても間に合わず、撮り直し連発 → 記録が義務化して習慣が折れる最大要因になりうる。
@@ -280,12 +286,14 @@ child-app/
 
 デフォルトは先頭1秒（= 何もしなければ現行と同じ体験）。「選べる」が追加されるだけで操作は増えない。
 
-### B. 今日の1秒を共有シートで送る（フェーズ2候補・実装約1日）
+### B. 今日の1秒を共有シートで送る ✅ 実装済み（2026-07）
 
-SNS 化はしない方針の代わりに、**OS の共有シート（expo-sharing）で動画ファイルをそのまま送れる**ようにする。
+SNS 化はしない方針の代わりに、**OS の共有シート（expo-sharing）で動画ファイルをそのまま送れる**。
 日本の育児家庭では「LINE の家族グループに送る」が支配的なユースケースで、
 サーバー・アカウント・モデレーション一切不要のままアプリの口コミ導線にもなる。
-置き場所は Today 画面の撮影完了ビューと再生画面。
+Today 画面の撮影完了ビューに設置済み（再生画面にも今後設置）。
+※現状は3秒の動画ファイルがそのまま送られる。選んだ1秒だけを送るのは
+ffmpeg 導入（フェーズ3）後に trim を適用して対応する。
 
 ### C. 写真しかない日の救済（フェーズ2のフォトライブラリ取り込みに含める）
 

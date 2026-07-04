@@ -1,4 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -7,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useClipLoop } from '@/hooks/use-clip-loop';
 import { useTheme } from '@/hooks/use-theme';
 import { storage } from '@/services/StorageService';
 import { useEntriesStore } from '@/stores/useEntriesStore';
@@ -51,7 +53,19 @@ export default function TodayScreen() {
     player.muted = muted;
   }, [muted, player]);
 
+  // 保存された動画は3秒。選んだ「ベスト1秒」だけをループ再生する
+  useClipLoop(player, todayEntry?.clip_start_ms ?? 0, videoUri !== null);
+
   const toggleMute = () => setMuted((m) => !m);
+
+  const share = async () => {
+    if (!videoUri || !todayEntry) return;
+    if (!(await Sharing.isAvailableAsync())) return;
+    await Sharing.shareAsync(videoUri, {
+      dialogTitle: '今日の1秒を共有',
+      mimeType: todayEntry.video_path.endsWith('.mov') ? 'video/quicktime' : 'video/mp4',
+    }).catch(() => {}); // ユーザーキャンセルは正常系
+  };
 
   return (
     <ThemedView style={styles.container}>
@@ -87,13 +101,23 @@ export default function TodayScreen() {
               <ThemedText style={styles.muteBadge}>{muted ? '🔇' : '🔊'}</ThemedText>
             </Pressable>
             <ThemedText type="subtitle">今日の1秒、残せました 🎉</ThemedText>
-            <Pressable
-              onPress={() => router.navigate('/camera')}
-              style={[styles.secondaryButton, { borderColor: palette.accent }]}
-              accessibilityRole="button"
-            >
-              <ThemedText style={{ color: palette.accent }}>撮り直す</ThemedText>
-            </Pressable>
+            <View style={styles.actionsRow}>
+              <Pressable
+                onPress={share}
+                style={[styles.primaryAction, { backgroundColor: palette.accent }]}
+                accessibilityRole="button"
+                accessibilityLabel="今日の1秒を共有する"
+              >
+                <ThemedText style={styles.primaryActionText}>共有する</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => router.navigate('/camera')}
+                style={[styles.secondaryButton, { borderColor: palette.accent }]}
+                accessibilityRole="button"
+              >
+                <ThemedText style={{ color: palette.accent }}>撮り直す</ThemedText>
+              </Pressable>
+            </View>
           </View>
         ) : (
           <View style={styles.emptyArea}>
@@ -169,6 +193,17 @@ const styles = StyleSheet.create({
     bottom: Spacing.three,
     fontSize: 22,
   },
+  actionsRow: {
+    flexDirection: 'row',
+    gap: Spacing.three,
+    alignItems: 'center',
+  },
+  primaryAction: {
+    borderRadius: 999,
+    paddingHorizontal: Spacing.five,
+    paddingVertical: Spacing.two,
+  },
+  primaryActionText: { color: '#fff', fontWeight: '600' },
   secondaryButton: {
     borderWidth: 1.5,
     borderRadius: 999,

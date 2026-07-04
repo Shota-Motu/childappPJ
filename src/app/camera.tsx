@@ -1,3 +1,4 @@
+import Slider from '@react-native-community/slider';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { router } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -15,12 +16,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { useClipLoop } from '@/hooks/use-clip-loop';
 import { useTheme } from '@/hooks/use-theme';
 import { todayString } from '@/lib/dates';
 import { storage } from '@/services/StorageService';
 import { useEntriesStore } from '@/stores/useEntriesStore';
 
 type Phase = 'idle' | 'recording' | 'preview' | 'saving';
+
+/** 録画は3秒。その中から「ベスト1秒」を選ぶ */
+const RECORD_MS = 3000;
+const CLIP_MS = 1000;
 
 export default function CameraScreen() {
   const palette = useTheme();
@@ -33,6 +39,8 @@ export default function CameraScreen() {
   const [facing, setFacing] = useState<'front' | 'back'>('back');
   const [cameraReady, setCameraReady] = useState(false);
   const [pendingUri, setPendingUri] = useState<string | null>(null);
+  const [durationMs, setDurationMs] = useState(RECORD_MS);
+  const [clipStartMs, setClipStartMs] = useState(0);
   const pendingUriRef = useRef<string | null>(null);
   // 「その日」は録画が完了した瞬間に確定する（0時またぎで翌日扱いになるのを防ぐ）
   const recordedDateRef = useRef<string | null>(null);
@@ -60,10 +68,22 @@ export default function CameraScreen() {
     if (pendingUri) {
       previewPlayer
         .replaceAsync(pendingUri)
-        .then(() => previewPlayer.play())
+        .then(() => {
+          const loaded = Math.round(previewPlayer.duration * 1000);
+          setDurationMs(loaded > CLIP_MS ? loaded : RECORD_MS);
+          previewPlayer.play();
+        })
         .catch(() => {});
     }
   }, [pendingUri, previewPlayer]);
+
+  // プレビューは選択中の1秒だけをループ再生
+  useClipLoop(
+    previewPlayer,
+    clipStartMs,
+    (phase === 'preview' || phase === 'saving') && pendingUri !== null,
+    CLIP_MS,
+  );
 
   if (!cameraPermission || !micPermission) {
     return <ThemedView style={styles.center} />;
@@ -111,19 +131,19 @@ export default function CameraScreen() {
     progress.setValue(0);
     Animated.timing(progress, {
       toValue: 1,
-      duration: 1000,
+      duration: RECORD_MS,
       useNativeDriver: false,
     }).start();
 
     try {
-      // maxDuration で1秒（1000ms）録画し自動停止を待つ
-      const result = await camera.recordAsync({ maxDuration: 1 });
+      const result = await camera.recordAsync({ maxDuration: RECORD_MS / 1000 });
       if (result?.uri) {
         recordedDateRef.current = todayString();
         // 録画ファイルをアプリ管理下の pending 領域へ移す（起動時掃除の対象にする）
         const staged = await storage.stagePending(result.uri);
         pendingUriRef.current = staged;
         setPendingUri(staged);
+        setClipStartMs(0);
         setPhase('preview');
       } else {
         setPhase('idle');
@@ -141,6 +161,7 @@ export default function CameraScreen() {
       pendingUriRef.current = null;
     }
     setPendingUri(null);
+    setClipStartMs(0);
     setPhase('idle');
   };
 
@@ -151,6 +172,7 @@ export default function CameraScreen() {
       await storage.finalize(
         recordedDateRef.current ?? todayString(),
         pendingUriRef.current,
+        { clipStartMs, durationMs },
       );
       confirmedRef.current = true;
       pendingUriRef.current = null;
@@ -161,6 +183,8 @@ export default function CameraScreen() {
       setPhase('preview');
     }
   };
+
+  const sliderMax = Math.max(0, durationMs - CLIP_MS);
 
   return (
     <ThemedView style={styles.container}>
@@ -174,29 +198,51 @@ export default function CameraScreen() {
           />
           <SafeAreaView style={styles.overlay}>
             <ThemedText type="subtitle" style={styles.overlayTitle}>
-              この1秒でいい？
+              ベスト1秒を選ぼう
             </ThemedText>
-            <View style={styles.previewActions}>
-              <Pressable
-                style={[styles.secondaryButton, { borderColor: '#fff' }]}
-                onPress={retake}
-                disabled={phase === 'saving'}
-                accessibilityRole="button"
-              >
-                <ThemedText style={styles.overlayButtonText}>撮り直す</ThemedText>
-              </Pressable>
-              <Pressable
-                style={[styles.primaryButton, { backgroundColor: palette.accent }]}
-                onPress={confirm}
-                disabled={phase === 'saving'}
-                accessibilityRole="button"
-              >
-                {phase === 'saving' ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <ThemedText style={styles.primaryButtonText}>この1秒を残す</ThemedText>
-                )}
-              </Pressable>
+            <View style={styles.previewBottom}>
+              {sliderMax > 0 && (
+                <View style={styles.sliderArea}>
+                  <ThemedText style={styles.sliderLabel}>
+                    ◁ ずらして「この1秒」を探す ▷
+                  </ThemedText>
+                  <Slider
+                    style={styles.slider}
+                    minimumValue={0}
+                    maximumValue={sliderMax}
+                    step={50}
+                    value={clipStartMs}
+                    onValueChange={setClipStartMs}
+                    minimumTrackTintColor={palette.accent}
+                    maximumTrackTintColor="rgba(255,255,255,0.4)"
+                    thumbTintColor={palette.accent}
+                    disabled={phase === 'saving'}
+                    accessibilityLabel="使う1秒の開始位置"
+                  />
+                </View>
+              )}
+              <View style={styles.previewActions}>
+                <Pressable
+                  style={[styles.secondaryButton, { borderColor: '#fff' }]}
+                  onPress={retake}
+                  disabled={phase === 'saving'}
+                  accessibilityRole="button"
+                >
+                  <ThemedText style={styles.overlayButtonText}>撮り直す</ThemedText>
+                </Pressable>
+                <Pressable
+                  style={[styles.primaryButton, { backgroundColor: palette.accent }]}
+                  onPress={confirm}
+                  disabled={phase === 'saving'}
+                  accessibilityRole="button"
+                >
+                  {phase === 'saving' ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <ThemedText style={styles.primaryButtonText}>この1秒を残す</ThemedText>
+                  )}
+                </Pressable>
+              </View>
             </View>
           </SafeAreaView>
         </View>
@@ -247,14 +293,16 @@ export default function CameraScreen() {
                 </View>
               ) : (
                 <ThemedText style={styles.overlayButtonText}>
-                  {cameraReady ? 'ボタンを押すと1秒だけ録画します' : 'カメラを準備中…'}
+                  {cameraReady
+                    ? '3秒録画して、あとからベスト1秒を選べます'
+                    : 'カメラを準備中…'}
                 </ThemedText>
               )}
               <Pressable
                 onPress={record}
                 disabled={phase !== 'idle' || !cameraReady}
                 accessibilityRole="button"
-                accessibilityLabel="1秒録画を開始する"
+                accessibilityLabel="3秒録画を開始する"
                 style={[
                   styles.shutter,
                   { borderColor: '#fff' },
@@ -323,6 +371,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   progressFill: { height: '100%', borderRadius: 3 },
+  previewBottom: { gap: Spacing.three },
+  sliderArea: { alignItems: 'center', gap: Spacing.one },
+  sliderLabel: {
+    color: '#fff',
+    fontSize: 14,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowRadius: 6,
+  },
+  slider: { alignSelf: 'stretch', height: 40 },
   previewActions: {
     flexDirection: 'row',
     justifyContent: 'center',
