@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import Slider from '@react-native-community/slider';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { router } from 'expo-router';
@@ -267,7 +268,7 @@ export default function CameraScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="閉じる"
               >
-                <ThemedText style={styles.overlayButtonText}>✕</ThemedText>
+                <Ionicons name="close" size={26} color="#fff" />
               </Pressable>
               <Pressable
                 onPress={() => {
@@ -279,7 +280,7 @@ export default function CameraScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="カメラを切り替える"
               >
-                <ThemedText style={styles.overlayButtonText}>🔄</ThemedText>
+                <Ionicons name="camera-reverse-outline" size={28} color="#fff" />
               </Pressable>
             </View>
 

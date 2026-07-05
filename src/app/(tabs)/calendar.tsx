@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
@@ -55,8 +56,7 @@ export default function CalendarScreen() {
   );
 
   const today = todayString();
-  const isCurrentMonth =
-    monthKey(cursor) === monthKey(currentMonth());
+  const isCurrentMonth = monthKey(cursor) === monthKey(currentMonth());
 
   const importForDate = async (date: string) => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -93,13 +93,17 @@ export default function CalendarScreen() {
     );
   };
 
-  // グリッド構築：先頭の曜日オフセット + 月の日数
+  // グリッド構築：先頭の曜日オフセット + 月の日数 → 週ごとの行に分割
   const firstWeekday = new Date(cursor.year, cursor.month - 1, 1).getDay();
   const daysInMonth = new Date(cursor.year, cursor.month, 0).getDate();
   const cells: (number | null)[] = [
     ...Array<null>(firstWeekday).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
+  // 6週分に固定してカレンダーの縦幅を月ごとに変えない（レイアウトのガタつき防止）
+  while (cells.length < 42) cells.push(null);
+  const weeks: (number | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
   return (
     <ThemedView style={styles.container}>
@@ -111,9 +115,7 @@ export default function CalendarScreen() {
             accessibilityRole="button"
             accessibilityLabel="前の月へ"
           >
-            <ThemedText type="subtitle" style={{ color: palette.accent }}>
-              ‹
-            </ThemedText>
+            <Ionicons name="chevron-back" size={26} color={palette.accent} />
           </Pressable>
           <ThemedText type="subtitle">
             {cursor.year}年{cursor.month}月
@@ -125,12 +127,12 @@ export default function CalendarScreen() {
             accessibilityRole="button"
             accessibilityLabel="次の月へ"
           >
-            <ThemedText
-              type="subtitle"
-              style={{ color: palette.accent, opacity: isCurrentMonth ? 0.25 : 1 }}
-            >
-              ›
-            </ThemedText>
+            <Ionicons
+              name="chevron-forward"
+              size={26}
+              color={palette.accent}
+              style={{ opacity: isCurrentMonth ? 0.25 : 1 }}
+            />
           </Pressable>
         </View>
 
@@ -147,55 +149,61 @@ export default function CalendarScreen() {
         </View>
 
         <View style={styles.grid}>
-          {cells.map((day, i) => {
-            if (day === null) {
-              return <View key={`pad-${i}`} style={styles.cell} />;
-            }
-            const date = `${monthKey(cursor)}-${String(day).padStart(2, '0')}`;
-            const entry = entries.get(date);
-            const isFuture = date > today;
-            const isToday = date === today;
+          {weeks.map((week, wi) => (
+            <View key={wi} style={styles.weekRow}>
+              {week.map((day, di) => {
+                if (day === null) {
+                  return <View key={`pad-${wi}-${di}`} style={styles.cell} />;
+                }
+                const date = `${monthKey(cursor)}-${String(day).padStart(2, '0')}`;
+                const entry = entries.get(date);
+                const isFuture = date > today;
+                const isToday = date === today;
 
-            return (
-              <Pressable
-                key={date}
-                style={[
-                  styles.cell,
-                  { backgroundColor: palette.backgroundElement },
-                  isToday && { borderWidth: 2, borderColor: palette.accent },
-                  isFuture && styles.future,
-                ]}
-                disabled={isFuture || importing}
-                onPress={() =>
-                  entry ? router.push(`/playback/${date}`) : onPressEmptyDay(date, day)
-                }
-                accessibilityRole="button"
-                accessibilityLabel={
-                  entry ? `${day}日の記録を再生` : `${day}日（未記録）`
-                }
-              >
-                {entry ? (
-                  entry.thumb_path ? (
-                    <Image
-                      source={{ uri: storage.resolveUri(entry.thumb_path) }}
-                      style={styles.thumb}
-                      contentFit="cover"
-                    />
-                  ) : (
-                    <View style={styles.thumbFallback}>
-                      <ThemedText>🎬</ThemedText>
-                    </View>
-                  )
-                ) : null}
-                <ThemedText
-                  type="small"
-                  style={[styles.dayLabel, entry ? styles.dayLabelOnThumb : null]}
-                >
-                  {day}
-                </ThemedText>
-              </Pressable>
-            );
-          })}
+                return (
+                  <Pressable
+                    key={date}
+                    style={[
+                      styles.cell,
+                      { backgroundColor: palette.backgroundElement },
+                      isToday && { borderWidth: 2, borderColor: palette.accent },
+                      isFuture && styles.future,
+                    ]}
+                    disabled={isFuture || importing}
+                    onPress={() =>
+                      entry ? router.push(`/playback/${date}`) : onPressEmptyDay(date, day)
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={entry ? `${day}日の記録を再生` : `${day}日（未記録）`}
+                  >
+                    {entry ? (
+                      entry.thumb_path ? (
+                        <Image
+                          source={{ uri: storage.resolveUri(entry.thumb_path) }}
+                          style={styles.thumb}
+                          contentFit="cover"
+                        />
+                      ) : (
+                        <View style={styles.thumbFallback}>
+                          <Ionicons
+                            name="videocam-outline"
+                            size={18}
+                            color={palette.textSecondary}
+                          />
+                        </View>
+                      )
+                    ) : null}
+                    <ThemedText
+                      type="small"
+                      style={[styles.dayLabel, entry ? styles.dayLabelOnThumb : null]}
+                    >
+                      {day}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
         </View>
 
         {importing && (
@@ -213,26 +221,25 @@ const CELL_GAP = 4;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1, padding: Spacing.three, gap: Spacing.three, alignItems: 'center' },
+  safeArea: { flex: 1, padding: Spacing.three, gap: Spacing.three },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: Spacing.five,
     marginTop: Spacing.two,
   },
   weekdayRow: { flexDirection: 'row', alignSelf: 'stretch' },
   weekday: { flex: 1, textAlign: 'center', opacity: 0.6 },
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flex: 1,
     alignSelf: 'stretch',
-    rowGap: CELL_GAP,
+    gap: CELL_GAP,
   },
+  weekRow: { flex: 1, flexDirection: 'row', gap: CELL_GAP },
   cell: {
-    width: `${100 / 7 - 0.5}%`,
-    marginHorizontal: '0.25%',
-    aspectRatio: 1,
-    borderRadius: 8,
+    flex: 1,
+    borderRadius: 10,
     overflow: 'hidden',
     alignItems: 'flex-start',
     justifyContent: 'flex-start',

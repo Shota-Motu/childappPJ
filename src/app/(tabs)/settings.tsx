@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -27,6 +28,7 @@ import {
   rescheduleReminders,
 } from '@/services/NotificationService';
 import { useEntriesStore } from '@/stores/useEntriesStore';
+import { type ThemePreference, useThemeStore } from '@/stores/useThemeStore';
 
 function timeToDate(time: string): Date {
   const [h, m] = time.split(':').map(Number);
@@ -39,6 +41,12 @@ function dateToTime(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+const THEME_OPTIONS: { value: ThemePreference; label: string; icon: 'sunny-outline' | 'moon-outline' | 'phone-portrait-outline' }[] = [
+  { value: 'light', label: 'ライト', icon: 'sunny-outline' },
+  { value: 'dark', label: 'ダーク', icon: 'moon-outline' },
+  { value: 'system', label: 'システム', icon: 'phone-portrait-outline' },
+];
+
 export default function SettingsScreen() {
   const palette = useTheme();
   const [reminderEnabled, setReminderEnabled] = useState(false);
@@ -47,6 +55,8 @@ export default function SettingsScreen() {
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
   const [busy, setBusy] = useState<'export' | 'import' | null>(null);
   const refreshToday = useEntriesStore((s) => s.refreshToday);
+  const themePreference = useThemeStore((s) => s.preference);
+  const setThemePreference = useThemeStore((s) => s.setPreference);
 
   useFocusEffect(
     useCallback(() => {
@@ -134,9 +144,46 @@ export default function SettingsScreen() {
         </ThemedText>
 
         <View style={[styles.section, { backgroundColor: palette.backgroundElement }]}>
-          <ThemedText type="smallBold" style={styles.sectionTitle}>
-            🔔 毎日のリマインド
-          </ThemedText>
+          <View style={styles.sectionTitleRow}>
+            <Ionicons name="color-palette-outline" size={18} color={palette.textSecondary} />
+            <ThemedText type="smallBold" style={styles.sectionTitle}>
+              外観
+            </ThemedText>
+          </View>
+          <View style={styles.themeOptions}>
+            {THEME_OPTIONS.map((opt) => {
+              const selected = themePreference === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => setThemePreference(opt.value)}
+                  style={[
+                    styles.themeOption,
+                    {
+                      backgroundColor: selected ? palette.accent : palette.background,
+                      borderColor: selected ? palette.accent : palette.backgroundSelected,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`外観を${opt.label}にする`}
+                >
+                  <Ionicons name={opt.icon} size={20} color={selected ? '#fff' : palette.text} />
+                  <ThemedText style={{ color: selected ? '#fff' : palette.text }}>
+                    {opt.label}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={[styles.section, { backgroundColor: palette.backgroundElement }]}>
+          <View style={styles.sectionTitleRow}>
+            <Ionicons name="notifications-outline" size={18} color={palette.textSecondary} />
+            <ThemedText type="smallBold" style={styles.sectionTitle}>
+              毎日のリマインド
+            </ThemedText>
+          </View>
           <View style={styles.row}>
             <ThemedText>リマインド通知</ThemedText>
             <Switch
@@ -171,9 +218,12 @@ export default function SettingsScreen() {
         </View>
 
         <View style={[styles.section, { backgroundColor: palette.backgroundElement }]}>
-          <ThemedText type="smallBold" style={styles.sectionTitle}>
-            💾 バックアップ
-          </ThemedText>
+          <View style={styles.sectionTitleRow}>
+            <Ionicons name="cloud-upload-outline" size={18} color={palette.textSecondary} />
+            <ThemedText type="smallBold" style={styles.sectionTitle}>
+              バックアップ
+            </ThemedText>
+          </View>
           <ThemedText type="small" style={{ color: palette.textSecondary }}>
             すべての記録を選んだフォルダ（iCloud Drive・Google ドライブ等）へコピーします。
             端末の紛失・機種変更に備えて定期的に作成してください。
@@ -222,7 +272,17 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     gap: Spacing.three,
   },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
   sectionTitle: { opacity: 0.8 },
+  themeOptions: { flexDirection: 'row', gap: Spacing.two },
+  themeOption: {
+    flex: 1,
+    alignItems: 'center',
+    gap: Spacing.half,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.two,
+    borderWidth: 1.5,
+  },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',

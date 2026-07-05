@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useState } from 'react';
@@ -78,9 +79,7 @@ export default function PlaybackScreen() {
               accessibilityRole="button"
               accessibilityLabel="前の日へ"
             >
-              <ThemedText type="subtitle" style={{ color: palette.accent }}>
-                ‹
-              </ThemedText>
+              <Ionicons name="chevron-back" size={28} color={palette.accent} />
             </Pressable>
             <Pressable
               onPress={() => entry && shareEntryVideo(entry)}
@@ -97,9 +96,7 @@ export default function PlaybackScreen() {
               accessibilityRole="button"
               accessibilityLabel="次の日へ"
             >
-              <ThemedText type="subtitle" style={{ color: palette.accent }}>
-                ›
-              </ThemedText>
+              <Ionicons name="chevron-forward" size={28} color={palette.accent} />
             </Pressable>
           </View>
         </View>

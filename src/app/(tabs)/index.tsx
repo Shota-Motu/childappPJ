@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useCallback, useEffect, useState } from 'react';
@@ -74,7 +75,10 @@ export default function TodayScreen() {
               </ThemedText>
             )}
             {streak > 1 && (
-              <ThemedText style={{ color: palette.accent }}>🔥 {streak}日連続</ThemedText>
+              <View style={styles.streakRow}>
+                <Ionicons name="flame" size={16} color={palette.accent} />
+                <ThemedText style={{ color: palette.accent }}>{streak}日連続</ThemedText>
+              </View>
             )}
           </View>
         </View>
@@ -93,9 +97,11 @@ export default function TodayScreen() {
                 contentFit="cover"
                 nativeControls={false}
               />
-              <ThemedText style={styles.muteBadge}>{muted ? '🔇' : '🔊'}</ThemedText>
+              <View style={styles.muteBadge}>
+                <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+              </View>
             </Pressable>
-            <ThemedText type="subtitle">今日の1秒、残せました 🎉</ThemedText>
+            <ThemedText type="subtitle">今日の1秒、残せました</ThemedText>
             <View style={styles.actionsRow}>
               <Pressable
                 onPress={share}
@@ -126,7 +132,7 @@ export default function TodayScreen() {
               accessibilityLabel="今日の1秒を撮影する"
             >
               <View style={[styles.recordButtonInner, { borderColor: palette.background }]}>
-                <ThemedText style={styles.recordButtonEmoji}>📷</ThemedText>
+                <Ionicons name="camera" size={40} color="#fff" />
               </View>
             </Pressable>
             <ThemedText style={{ color: palette.textSecondary }}>
@@ -144,6 +150,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, alignItems: 'center', padding: Spacing.four },
   header: { alignItems: 'center', gap: Spacing.two, marginTop: Spacing.four },
   stats: { alignItems: 'center', gap: Spacing.half },
+  streakRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.half },
   emptyArea: {
     flex: 1,
     alignItems: 'center',
@@ -166,7 +173,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  recordButtonEmoji: { fontSize: 40, lineHeight: 48 },
   recordedArea: {
     flex: 1,
     alignItems: 'center',
@@ -186,7 +192,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: Spacing.three,
     bottom: Spacing.three,
-    fontSize: 22,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 999,
+    padding: Spacing.one,
   },
   actionsRow: {
     flexDirection: 'row',
